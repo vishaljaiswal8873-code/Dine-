@@ -1,0 +1,64 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: auditRequests
+    // Document ID: {requestId}
+    // Fields:
+    //   - name: string (required)
+    //   - restaurantName: string (required)
+    //   - phone: string (required)
+    //   - message: string (optional)
+    //   - createdAt: timestamp (required)
+    //   - status: string (required, enum: ['pending', 'contacted', 'completed'])
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "vishaljaiswal8873@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidAuditRequest(data) {
+      return data.keys().hasAll(['name', 'restaurantName', 'phone', 'createdAt', 'status']) &&
+             data.keys().hasOnly(['name', 'restaurantName', 'phone', 'message', 'createdAt', 'status']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.restaurantName is string && data.restaurantName.size() > 0 && data.restaurantName.size() < 100 &&
+             data.phone is string && data.phone.size() >= 10 && data.phone.size() <= 15 &&
+             (!('message' in data) || (data.message is string && data.message.size() < 1000)) &&
+             data.createdAt is timestamp &&
+             data.status in ['pending', 'contacted', 'completed'];
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /auditRequests/{requestId} {
+      // Anyone can submit an audit request (unauthenticated access for potential clients)
+      allow create: if isValidAuditRequest(request.resource.data) && 
+                      request.resource.data.status == 'pending' &&
+                      request.resource.data.createdAt == request.time;
+      
+      // Only admins can read or update audit requests
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if isAdmin();
+    }
+  }
+}

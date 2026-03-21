@@ -1,5 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import { motion, useScroll, useTransform, AnimatePresence, useInView } from 'motion/react';
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { db, auth } from './firebase';
+import { ChatBot } from './components/ChatBot';
 import { 
   MapPin, 
   Instagram, 
@@ -18,8 +23,64 @@ import {
   Users,
   ArrowRight,
   Star,
-  Quote
+  Quote,
+  Trash2,
+  RefreshCw,
+  Clock
 } from 'lucide-react';
+
+// --- Error Handling & Utilities ---
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+const handleFirestoreError = (error: unknown, operationType: OperationType, path: string | null) => {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+};
 
 // --- Shared Components ---
 
@@ -163,99 +224,102 @@ const Hero = () => {
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
         >
-          <div className="inline-flex items-center gap-3 px-5 py-2 rounded-full bg-brand-accent/10 text-brand-accent text-xs font-black uppercase tracking-[0.2em] mb-8 shadow-sm">
+          <div className="inline-flex items-center gap-3 px-5 py-2 rounded-full bg-brand-accent/10 text-brand-accent text-xs font-black uppercase tracking-[0.2em] mb-8 shadow-sm border border-brand-accent/20">
             <span className="w-2 h-2 rounded-full bg-brand-accent animate-ping" />
-            Ranchi's #1 Growth Agency
+            Ranchi's Premier Growth Agency
           </div>
-          <h1 className="text-5xl md:text-8xl font-serif font-bold text-brand-green leading-[1.05] mb-8 text-balance">
-            Helping Cafés & <span className="text-brand-accent italic">Restaurants</span> in Ranchi Get More Customers.
+          <h1 className="text-6xl md:text-8xl font-display font-medium text-brand-green leading-[0.95] mb-8 text-balance">
+            Elevating <span className="italic font-serif">Ranchi's</span> Culinary <span className="text-brand-accent">Landmarks.</span>
           </h1>
-          <p className="text-xl text-brand-green/70 mb-12 max-w-xl leading-relaxed font-medium">
-            We specialize in turning local food businesses into digital landmarks through expert Google Maps optimization, viral Instagram marketing, and high-converting restaurant websites.
+          <p className="text-xl text-brand-green/70 mb-12 max-w-xl leading-relaxed font-light">
+            We transform local restaurants into digital powerhouses. Through aesthetic branding, viral social strategy, and precision SEO, we ensure your tables are always full.
           </p>
           <div className="flex flex-col sm:flex-row gap-5">
-            <a href="#contact" className="px-10 py-5 bg-brand-green text-brand-cream rounded-2xl font-bold text-lg hover:bg-brand-brown transition-all shadow-2xl hover:shadow-brand-green/40 flex items-center justify-center gap-3 group">
+            <a href="#contact" className="px-10 py-6 bg-brand-green text-brand-cream rounded-2xl font-bold text-lg hover:bg-brand-brown transition-all shadow-2xl shadow-brand-green/40 flex items-center justify-center gap-3 group">
               Get a Free Audit
               <ArrowRight className="w-5 h-5 group-hover:translate-x-2 transition-transform" />
             </a>
-            <a href="https://wa.me/916209009255" className="px-10 py-5 glass border-brand-green/10 rounded-2xl font-bold text-lg hover:bg-brand-green hover:text-brand-cream transition-all flex items-center justify-center gap-3">
+            <a href="https://wa.me/916209009255" className="px-10 py-6 glass border-brand-green/10 rounded-2xl font-bold text-lg hover:bg-brand-green hover:text-brand-cream transition-all flex items-center justify-center gap-3">
               <MessageCircle className="w-6 h-6" />
-              Chat on WhatsApp
+              WhatsApp Us
             </a>
           </div>
           
-          <div className="mt-12 flex items-center gap-4">
-            <div className="flex -space-x-3">
+          <div className="mt-16 flex items-center gap-6">
+            <div className="flex -space-x-4">
               {[1,2,3,4].map(i => (
-                <div key={i} className="w-12 h-12 rounded-full border-4 border-brand-cream overflow-hidden">
-                  <img src={`https://picsum.photos/seed/user${i}/100/100`} alt="Client" referrerPolicy="no-referrer" />
+                <div key={i} className="w-14 h-14 rounded-full border-4 border-brand-cream overflow-hidden shadow-lg">
+                  <img src={`https://picsum.photos/seed/chef${i}/150/150`} alt="Chef" referrerPolicy="no-referrer" />
                 </div>
               ))}
             </div>
             <div>
               <div className="flex text-brand-accent mb-1">
-                {[1,2,3,4,5].map(i => <Star key={i} size={16} fill="currentColor" />)}
+                {[1,2,3,4,5].map(i => <Star key={i} size={18} fill="currentColor" />)}
               </div>
-              <p className="text-sm font-bold text-brand-green/60">Trusted by 50+ Ranchi Restaurants</p>
+              <p className="text-sm font-bold text-brand-green/60 uppercase tracking-widest">Trusted by 50+ Local Icons</p>
             </div>
           </div>
         </motion.div>
 
         <div className="relative perspective-1000 hidden lg:block">
           <motion.div style={{ y: y1 }} className="relative z-20">
-            <div className="w-full aspect-[4/5] glass-dark rounded-[4rem] p-12 flex items-center justify-center relative overflow-hidden group border-white/20">
-              {/* Main 3D Object - Coffee Cup */}
-              <FloatingElement className="relative z-10">
-                <div className="relative">
-                  <img 
-                    src="https://picsum.photos/seed/premium-coffee/800/800" 
-                    alt="Premium Coffee" 
-                    className="w-[450px] h-[450px] object-cover rounded-[3rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.5)] rotate-6 group-hover:rotate-0 transition-transform duration-1000"
-                    referrerPolicy="no-referrer"
-                  />
-                  {/* Floating Stats Card */}
-                  <div className="absolute -bottom-10 -right-10 glass p-6 rounded-3xl shadow-2xl animate-float-slow">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-600">
-                        <TrendingUp size={24} />
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest opacity-50">Monthly Growth</p>
-                        <p className="text-2xl font-serif font-bold text-brand-green">+142%</p>
-                      </div>
-                    </div>
+            <div className="w-full aspect-[4/5] glass p-4 rounded-[4rem] flex items-center justify-center relative overflow-hidden group border-white/40 shadow-2xl">
+              {/* Main Image Container */}
+              <div className="relative w-full h-full rounded-[3.5rem] overflow-hidden">
+                <img 
+                  src="https://images.unsplash.com/photo-1550966842-2849a28c0a61?auto=format&fit=crop&q=80&w=1200" 
+                  alt="Fine Dining Ranchi" 
+                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-[2000ms]"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-brand-green/80 via-transparent to-transparent" />
+                
+                {/* Overlay Content */}
+                <div className="absolute bottom-12 left-12 right-12">
+                  <p className="text-brand-accent font-serif italic text-2xl mb-2">Signature Strategy</p>
+                  <h3 className="text-white text-4xl font-serif font-bold leading-tight">Visual Storytelling for Modern Palates</h3>
+                </div>
+              </div>
+
+              {/* Floating Stats Card */}
+              <motion.div 
+                animate={{ y: [0, -10, 0] }}
+                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                className="absolute -bottom-6 -right-6 glass p-8 rounded-[2.5rem] shadow-2xl z-30"
+              >
+                <div className="flex items-center gap-5">
+                  <div className="w-14 h-14 bg-emerald-500/20 rounded-2xl flex items-center justify-center text-emerald-600">
+                    <TrendingUp size={28} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50 mb-1">Growth Index</p>
+                    <p className="text-3xl font-serif font-bold text-brand-green">+215%</p>
                   </div>
                 </div>
-              </FloatingElement>
+              </motion.div>
 
-              {/* Floating Icons */}
-              <FloatingElement delay={1} duration={5} className="absolute top-20 right-10">
-                <div className="w-20 h-20 glass rounded-3xl flex items-center justify-center shadow-xl text-brand-accent">
-                  <MapPin size={40} />
+              {/* Floating Elements */}
+              <FloatingElement delay={1} duration={5} className="absolute top-12 right-12 z-30">
+                <div className="w-24 h-24 glass rounded-[2rem] flex items-center justify-center shadow-2xl text-brand-accent border-white/40">
+                  <MapPin size={48} />
                 </div>
               </FloatingElement>
               
-              <FloatingElement delay={2} duration={7} className="absolute bottom-40 left-10">
-                <div className="w-16 h-16 glass rounded-2xl flex items-center justify-center shadow-xl text-brand-accent">
-                  <Instagram size={32} />
+              <FloatingElement delay={2} duration={7} className="absolute bottom-40 left-12 z-30">
+                <div className="w-20 h-20 glass rounded-[1.5rem] flex items-center justify-center shadow-2xl text-brand-accent border-white/40">
+                  <Instagram size={40} />
                 </div>
               </FloatingElement>
 
-              {/* Coffee Beans / Small Elements */}
-              {[1,2,3,4,5].map(i => (
-                <FloatingElement 
-                  key={i} 
-                  delay={i * 0.5} 
-                  duration={4 + i} 
-                  className={`absolute w-4 h-4 bg-brand-brown/40 rounded-full blur-[1px]`}
-                  style={{ 
-                    top: `${10 + i * 15}%`, 
-                    left: `${15 + i * 12}%` 
-                  }}
-                />
-              ))}
             </div>
           </motion.div>
+          
+          {/* Decorative Background Element */}
+          <motion.div 
+            style={{ y: y2 }}
+            className="absolute -top-20 -left-20 w-64 h-64 border border-brand-accent/20 rounded-full z-10"
+          />
         </div>
       </div>
     </section>
@@ -415,16 +479,34 @@ const Portfolio = () => {
       img: "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&q=80&w=800" 
     },
     { 
-      title: "The Terrace", 
-      location: "Ranchi",
+      title: "The Grand Terrace", 
+      location: "Main Road, Ranchi",
       category: "Social Media Ads", 
-      img: "https://images.unsplash.com/photo-1533777857889-4be7c70b33f7?auto=format&fit=crop&q=80&w=800" 
+      img: "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&q=80&w=800" 
     },
     { 
-      title: "Ranchi Bakers", 
-      location: "Ranchi",
+      title: "Artisan Bakers", 
+      location: "Lalpur, Ranchi",
       category: "Local SEO", 
-      img: "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&q=80&w=800" 
+      img: "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&q=80&w=800" 
+    },
+    { 
+      title: "Royal Tandoor Elite", 
+      location: "Doranda, Ranchi",
+      category: "Brand Identity", 
+      img: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=800" 
+    },
+    { 
+      title: "Green Leaf Bistro", 
+      location: "Kanke Road, Ranchi",
+      category: "Influencer Marketing", 
+      img: "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&q=80&w=800" 
+    },
+    { 
+      title: "The Burger Loft", 
+      location: "Bariatu, Ranchi",
+      category: "Performance Ads", 
+      img: "https://images.unsplash.com/photo-1460306855393-0410f61241c7?auto=format&fit=crop&q=80&w=800" 
     }
   ];
 
@@ -477,41 +559,42 @@ const Portfolio = () => {
 const SampleResults = () => {
   const results = [
     {
-      title: "Instagram Growth",
-      desc: "Restaurant Instagram improved with consistent food reels, better captions, and profile optimization.",
-      outcome: "Result: higher engagement and more customers discovering the restaurant.",
+      title: "Social Authority",
+      desc: "We transform your Instagram into a visual menu that Ranchi foodies can't stop scrolling.",
+      outcome: "3.2x higher engagement & viral reach.",
       icon: <Instagram className="w-10 h-10" />,
       img: "https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?auto=format&fit=crop&q=80&w=800"
     },
     {
-      title: "Google Maps Visibility",
-      desc: "Restaurant Google Business Profile optimized with better photos, menu information, and keywords.",
-      outcome: "Result: more visibility in “restaurant near me” searches.",
+      title: "Maps Dominance",
+      desc: "Be the first choice when someone searches for 'best food near me' in Ranchi.",
+      outcome: "#1 Ranking in Local Pack searches.",
       icon: <MapPin className="w-10 h-10" />,
       img: "https://images.unsplash.com/photo-1569336415962-a4bd4f79c3f2?auto=format&fit=crop&q=80&w=800"
     },
     {
-      title: "Restaurant Website",
-      desc: "Modern mobile-friendly website created with menu, location map, and WhatsApp contact.",
-      outcome: "Result: easier for customers to find the restaurant and view the menu.",
+      title: "Digital Storefront",
+      desc: "A high-end website that converts casual visitors into loyal dine-in customers.",
+      outcome: "45% increase in direct bookings.",
       icon: <Globe className="w-10 h-10" />,
       img: "https://images.unsplash.com/photo-1551288049-bbbda536339a?auto=format&fit=crop&q=80&w=800"
     }
   ];
 
   return (
-    <section className="py-32 bg-white overflow-hidden">
+    <section className="py-32 bg-white overflow-hidden noise-bg">
       <div className="max-w-7xl mx-auto px-6">
-        <SectionHeading 
-          subtitle="Sample Results & Example Projects" 
-          title="Results Restaurants Can Achieve" 
-        />
-        
-        <p className="text-center text-brand-green/60 text-xl max-w-3xl mx-auto mb-20 -mt-10">
-          These are example outcomes based on common restaurant marketing improvements.
-        </p>
+        <div className="text-center mb-24">
+          <p className="text-brand-accent font-black uppercase tracking-[0.3em] text-xs mb-4">Case Studies</p>
+          <h2 className="text-5xl md:text-7xl font-display font-medium text-brand-green leading-none mb-8">
+            Measurable <span className="italic font-serif">Impact.</span>
+          </h2>
+          <p className="text-brand-green/60 text-xl max-w-2xl mx-auto font-light">
+            Real growth metrics achieved for our partner restaurants through strategic digital interventions.
+          </p>
+        </div>
 
-        <div className="grid md:grid-cols-3 gap-10 mb-20">
+        <div className="grid md:grid-cols-3 gap-12 mb-20">
           {results.map((r, idx) => (
             <motion.div
               key={idx}
@@ -519,27 +602,28 @@ const SampleResults = () => {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: idx * 0.2 }}
-              className="group bg-brand-cream rounded-[3rem] overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-500 border border-brand-green/5"
+              className="group bg-brand-cream rounded-[3.5rem] overflow-hidden shadow-2xl hover:shadow-brand-accent/10 transition-all duration-700 border border-brand-green/5"
             >
-              <div className="h-64 overflow-hidden relative">
+              <div className="h-80 overflow-hidden relative">
                 <img 
                   src={r.img} 
                   alt={r.title} 
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
+                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-[2000ms]"
                   referrerPolicy="no-referrer"
                 />
-                <div className="absolute top-6 left-6 w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-brand-accent shadow-lg">
+                <div className="absolute inset-0 bg-brand-green/20 group-hover:bg-transparent transition-colors duration-700" />
+                <div className="absolute top-8 left-8 w-16 h-16 glass rounded-2xl flex items-center justify-center text-brand-accent shadow-2xl border-white/40">
                   {r.icon}
                 </div>
               </div>
-              <div className="p-10">
-                <h3 className="text-2xl font-serif font-bold text-brand-green mb-4">{r.title}</h3>
-                <p className="text-brand-green/70 mb-6 leading-relaxed">
+              <div className="p-12">
+                <h3 className="text-3xl font-serif font-bold text-brand-green mb-4">{r.title}</h3>
+                <p className="text-brand-green/70 mb-8 leading-relaxed font-light">
                   {r.desc}
                 </p>
-                <div className="p-6 bg-brand-accent/10 rounded-2xl border border-brand-accent/20">
-                  <p className="text-brand-green font-bold text-sm uppercase tracking-wider mb-2 opacity-50">Outcome</p>
-                  <p className="text-brand-green font-bold italic">
+                <div className="p-8 bg-brand-green text-brand-cream rounded-[2rem] shadow-xl group-hover:bg-brand-accent group-hover:text-brand-green transition-colors duration-500">
+                  <p className="text-[10px] font-black uppercase tracking-widest mb-2 opacity-50">Key Metric</p>
+                  <p className="text-2xl font-serif font-bold italic">
                     {r.outcome}
                   </p>
                 </div>
@@ -548,26 +632,52 @@ const SampleResults = () => {
           ))}
         </div>
 
-        <div className="text-center space-y-12">
-          <p className="text-brand-green/50 italic text-lg max-w-2xl mx-auto">
-            “Results depend on each restaurant’s current online presence. Contact us for a free audit to see how your restaurant can improve.”
-          </p>
-          
-          <div className="flex flex-col items-center gap-6">
-            <a 
-              href="#contact" 
-              className="px-10 py-6 bg-brand-green text-brand-cream rounded-2xl font-bold text-xl hover:bg-brand-brown transition-all shadow-2xl shadow-brand-green/20 flex items-center gap-3 group"
-            >
-              Get Your Free Restaurant Online Audit
-              <ArrowRight className="group-hover:translate-x-2 transition-transform" />
-            </a>
-            <div className="flex items-center gap-4 text-brand-green font-bold text-lg">
-              <div className="w-10 h-10 bg-brand-accent/20 rounded-full flex items-center justify-center text-brand-accent">
-                <Phone size={18} />
-              </div>
-              <span>WhatsApp / Phone: +91 6209009255</span>
-            </div>
+        {/* Visual Evidence Gallery */}
+        <div className="mb-24">
+          <div className="flex items-center gap-6 mb-12">
+            <div className="h-px flex-1 bg-brand-green/10" />
+            <h3 className="text-2xl font-serif font-bold text-brand-green italic">Visual Evidence</h3>
+            <div className="h-px flex-1 bg-brand-green/10" />
           </div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {[
+              "https://images.unsplash.com/photo-1552566626-52f8b828add9?auto=format&fit=crop&q=80&w=600",
+              "https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&q=80&w=600",
+              "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=600",
+              "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=600",
+              "https://images.unsplash.com/photo-1550966842-2849a28c0a61?auto=format&fit=crop&q=80&w=600",
+              "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&q=80&w=600",
+              "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&q=80&w=600",
+              "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&q=80&w=600"
+            ].map((img, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, scale: 0.9 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="aspect-square rounded-3xl overflow-hidden border border-brand-green/5 shadow-lg group"
+              >
+                <img 
+                  src={img} 
+                  alt="Success Story" 
+                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                  referrerPolicy="no-referrer"
+                />
+              </motion.div>
+            ))}
+          </div>
+        </div>
+
+        <div className="text-center">
+          <a 
+            href="#contact" 
+            className="inline-flex items-center gap-4 px-12 py-6 bg-brand-green text-brand-cream rounded-2xl font-bold text-xl hover:bg-brand-brown transition-all shadow-2xl shadow-brand-green/20 group"
+          >
+            Start Your Success Story
+            <ArrowRight className="group-hover:translate-x-2 transition-transform" />
+          </a>
         </div>
       </div>
     </section>
@@ -575,37 +685,60 @@ const SampleResults = () => {
 };
 
 const RestaurantGallery = () => {
-  const images = [
-    "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=600",
-    "https://images.unsplash.com/photo-1476224489421-aba8c155111a?auto=format&fit=crop&q=80&w=600",
-    "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=600",
-    "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&q=80&w=600",
-    "https://images.unsplash.com/photo-1567620905732-2d1ec7bb7445?auto=format&fit=crop&q=80&w=600",
-    "https://images.unsplash.com/photo-1482049016688-2d3e1b311543?auto=format&fit=crop&q=80&w=600",
-    "https://images.unsplash.com/photo-1484723088339-323833995281?auto=format&fit=crop&q=80&w=600",
-    "https://images.unsplash.com/photo-1473093226795-af9932fe5856?auto=format&fit=crop&q=80&w=600"
+  const row1 = [
+    "https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&q=80&w=800",
+    "https://images.unsplash.com/photo-1550966842-2849a28c0a61?auto=format&fit=crop&q=80&w=800",
+    "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&q=80&w=800",
+    "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&q=80&w=800",
+  ];
+  const row2 = [
+    "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&q=80&w=800",
+    "https://images.unsplash.com/photo-1460306855393-0410f61241c7?auto=format&fit=crop&q=80&w=800",
+    "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=800",
+    "https://images.unsplash.com/photo-1552566626-52f8b828add9?auto=format&fit=crop&q=80&w=800",
   ];
 
   return (
-    <section className="py-32 bg-brand-cream overflow-hidden">
-      <div className="max-w-7xl mx-auto px-6 mb-16">
-        <SectionHeading 
-          subtitle="Visual Showcase" 
-          title="Capturing the Essence of Ranchi's Finest Dining" 
-        />
+    <section className="py-32 bg-brand-cream overflow-hidden noise-bg">
+      <div className="max-w-7xl mx-auto px-6 mb-20">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
+          <div className="max-w-2xl">
+            <p className="text-brand-accent font-black uppercase tracking-[0.3em] text-xs mb-4">Visual Excellence</p>
+            <h2 className="text-5xl md:text-7xl font-display font-medium text-brand-green leading-none">
+              Capturing the <span className="italic font-serif">Soul</span> of Ranchi's Dining.
+            </h2>
+          </div>
+          <p className="text-brand-green/60 text-lg max-w-sm font-light">
+            Professional photography that makes your food look as good as it tastes.
+          </p>
+        </div>
       </div>
       
-      <div className="flex gap-6 animate-marquee whitespace-nowrap">
-        {[...images, ...images].map((img, i) => (
-          <div key={i} className="w-[300px] h-[400px] flex-shrink-0 rounded-[2.5rem] overflow-hidden shadow-xl">
-            <img 
-              src={img} 
-              alt="Restaurant Food" 
-              className="w-full h-full object-cover hover:scale-110 transition-transform duration-700"
-              referrerPolicy="no-referrer"
-            />
-          </div>
-        ))}
+      <div className="space-y-8">
+        <div className="flex gap-8 animate-marquee whitespace-nowrap">
+          {[...row1, ...row1].map((img, i) => (
+            <div key={i} className="w-[450px] h-[300px] flex-shrink-0 rounded-[3rem] overflow-hidden shadow-2xl group border border-white/20">
+              <img 
+                src={img} 
+                alt="Restaurant Food" 
+                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-8 animate-marquee-reverse whitespace-nowrap">
+          {[...row2, ...row2].map((img, i) => (
+            <div key={i} className="w-[450px] h-[300px] flex-shrink-0 rounded-[3rem] overflow-hidden shadow-2xl group border border-white/20">
+              <img 
+                src={img} 
+                alt="Restaurant Food" 
+                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -632,6 +765,50 @@ const ServiceArea = () => {
 };
 
 const Contact = () => {
+  const [formData, setFormData] = useState({
+    name: '',
+    restaurantName: '',
+    phone: '',
+    message: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const path = 'auditRequests';
+      await addDoc(collection(db, path), {
+        ...formData,
+        status: 'pending',
+        createdAt: serverTimestamp()
+      });
+
+      // Call backend notification API
+      try {
+        await fetch('/api/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: formData.name, restaurantName: formData.restaurantName })
+        });
+      } catch (notifyErr) {
+        console.warn("Notification failed, but data was saved:", notifyErr);
+      }
+
+      setIsSubmitted(true);
+      setFormData({ name: '', restaurantName: '', phone: '', message: '' });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, 'auditRequests');
+      setError('Failed to send request. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <section id="contact" className="py-32 bg-brand-green text-brand-cream relative overflow-hidden">
       <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-5" />
@@ -676,31 +853,80 @@ const Contact = () => {
             viewport={{ once: true }}
             className="bg-white p-12 md:p-16 rounded-[4rem] text-brand-green shadow-[0_50px_100px_-20px_rgba(0,0,0,0.3)]"
           >
-            <h3 className="text-4xl font-serif font-bold mb-10">Request Audit</h3>
-            <form className="space-y-8" onSubmit={(e) => e.preventDefault()}>
-              <div className="grid md:grid-cols-2 gap-8">
-                <div className="space-y-3">
-                  <label className="text-xs font-black uppercase tracking-widest opacity-40">Your Name</label>
-                  <input type="text" className="w-full px-8 py-5 bg-brand-cream rounded-2xl border-none focus:ring-4 focus:ring-brand-accent/20 transition-all font-medium" placeholder="John Doe" />
+            {isSubmitted ? (
+              <div className="text-center py-12">
+                <div className="w-24 h-24 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-8">
+                  <CheckCircle2 size={48} />
                 </div>
-                <div className="space-y-3">
-                  <label className="text-xs font-black uppercase tracking-widest opacity-40">Restaurant Name</label>
-                  <input type="text" className="w-full px-8 py-5 bg-brand-cream rounded-2xl border-none focus:ring-4 focus:ring-brand-accent/20 transition-all font-medium" placeholder="The Ranchi Bistro" />
-                </div>
+                <h3 className="text-4xl font-serif font-bold mb-4">Request Sent!</h3>
+                <p className="text-brand-green/60 text-lg mb-8">Thank you for reaching out. Our team will analyze your presence and contact you within 24 hours.</p>
+                <button 
+                  onClick={() => setIsSubmitted(false)}
+                  className="px-8 py-4 bg-brand-green text-brand-cream rounded-2xl font-bold hover:bg-brand-brown transition-all"
+                >
+                  Send Another Request
+                </button>
               </div>
-              <div className="space-y-3">
-                <label className="text-xs font-black uppercase tracking-widest opacity-40">Phone Number</label>
-                <input type="tel" className="w-full px-8 py-5 bg-brand-cream rounded-2xl border-none focus:ring-4 focus:ring-brand-accent/20 transition-all font-medium" placeholder="+91 00000 00000" />
-              </div>
-              <div className="space-y-3">
-                <label className="text-xs font-black uppercase tracking-widest opacity-40">Your Message</label>
-                <textarea rows={4} className="w-full px-8 py-5 bg-brand-cream rounded-2xl border-none focus:ring-4 focus:ring-brand-accent/20 transition-all font-medium" placeholder="How can we help you grow?" />
-              </div>
-              <button className="w-full py-6 bg-brand-green text-brand-cream rounded-2xl font-bold text-xl hover:bg-brand-brown transition-all shadow-2xl shadow-brand-green/20 flex items-center justify-center gap-3">
-                Send Audit Request
-                <ArrowRight />
-              </button>
-            </form>
+            ) : (
+              <>
+                <h3 className="text-4xl font-serif font-bold mb-10">Request Audit</h3>
+                <form className="space-y-8" onSubmit={handleSubmit}>
+                  <div className="grid md:grid-cols-2 gap-8">
+                    <div className="space-y-3">
+                      <label className="text-xs font-black uppercase tracking-widest opacity-40">Your Name</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        className="w-full px-8 py-5 bg-brand-cream rounded-2xl border-none focus:ring-4 focus:ring-brand-accent/20 transition-all font-medium" 
+                        placeholder="John Doe" 
+                      />
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-xs font-black uppercase tracking-widest opacity-40">Restaurant Name</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={formData.restaurantName}
+                        onChange={(e) => setFormData({ ...formData, restaurantName: e.target.value })}
+                        className="w-full px-8 py-5 bg-brand-cream rounded-2xl border-none focus:ring-4 focus:ring-brand-accent/20 transition-all font-medium" 
+                        placeholder="The Ranchi Bistro" 
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-xs font-black uppercase tracking-widest opacity-40">Phone Number</label>
+                    <input 
+                      type="tel" 
+                      required
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      className="w-full px-8 py-5 bg-brand-cream rounded-2xl border-none focus:ring-4 focus:ring-brand-accent/20 transition-all font-medium" 
+                      placeholder="+91 00000 00000" 
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-xs font-black uppercase tracking-widest opacity-40">Your Message</label>
+                    <textarea 
+                      rows={4} 
+                      value={formData.message}
+                      onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                      className="w-full px-8 py-5 bg-brand-cream rounded-2xl border-none focus:ring-4 focus:ring-brand-accent/20 transition-all font-medium" 
+                      placeholder="How can we help you grow?" 
+                    />
+                  </div>
+                  {error && <p className="text-red-500 text-sm font-bold">{error}</p>}
+                  <button 
+                    disabled={isSubmitting}
+                    className="w-full py-6 bg-brand-green text-brand-cream rounded-2xl font-bold text-xl hover:bg-brand-brown transition-all shadow-2xl shadow-brand-green/20 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? 'Sending...' : 'Send Audit Request'}
+                    <ArrowRight />
+                  </button>
+                </form>
+              </>
+            )}
           </motion.div>
         </div>
       </div>
@@ -757,20 +983,11 @@ const Footer = () => {
 const FloatingWhatsApp = () => {
   return (
     <motion.div
-      initial={{ x: 100, opacity: 0 }}
+      initial={{ x: -100, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       transition={{ delay: 1, type: "spring", stiffness: 100 }}
-      className="fixed bottom-10 right-10 z-50 flex items-center gap-4"
+      className="fixed bottom-10 left-10 z-50 flex items-center gap-4"
     >
-      <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ delay: 2 }}
-        className="hidden md:block bg-white px-6 py-3 rounded-2xl shadow-xl border border-brand-green/5 font-bold text-brand-green"
-      >
-        Chat with us! 🚀
-      </motion.div>
-      
       <motion.a
         href="https://wa.me/916209009255"
         target="_blank"
@@ -780,6 +997,7 @@ const FloatingWhatsApp = () => {
         className="relative w-20 h-20 bg-[#25D366] text-white rounded-full flex items-center justify-center shadow-[0_20px_50px_rgba(37,211,102,0.4)] hover:shadow-[#25D366]/60 transition-all group"
       >
         <MessageCircle className="w-10 h-10 fill-current" />
+        <div className="absolute inset-0 bg-white rounded-full scale-0 group-hover:scale-110 opacity-20 transition-transform duration-500" />
         
         {/* Animated rings */}
         <span className="absolute inset-0 rounded-full bg-[#25D366] animate-ping opacity-20" />
@@ -788,11 +1006,218 @@ const FloatingWhatsApp = () => {
         {/* Notification dot */}
         <span className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full border-4 border-white z-10" />
       </motion.a>
+
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: 2 }}
+        className="hidden md:block bg-white px-6 py-3 rounded-2xl shadow-xl border border-brand-green/5 font-bold text-brand-green"
+      >
+        Chat with us! 🚀
+      </motion.div>
     </motion.div>
   );
 };
 
+const AdminDashboard = () => {
+  const [requests, setRequests] = useState<any[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (user && user.email === "vishaljaiswal8873@gmail.com") {
+      const q = query(collection(db, 'auditRequests'), orderBy('createdAt', 'desc'));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const reqs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setRequests(reqs);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'auditRequests');
+      });
+      return () => unsubscribe();
+    }
+  }, [user]);
+
+  const handleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleLogout = () => signOut(auth);
+
+  const updateStatus = async (id: string, newStatus: string) => {
+    try {
+      await updateDoc(doc(db, 'auditRequests', id), { status: newStatus });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `auditRequests/${id}`);
+    }
+  };
+
+  const deleteRequest = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this request?")) return;
+    try {
+      await deleteDoc(doc(db, 'auditRequests', id));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `auditRequests/${id}`);
+    }
+  };
+
+  const stats = {
+    total: requests.length,
+    pending: requests.filter(r => r.status === 'pending').length,
+    completed: requests.filter(r => r.status === 'completed').length
+  };
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+
+  if (!user || user.email !== "vishaljaiswal8873@gmail.com") {
+    return (
+      <div className="min-h-screen bg-brand-cream flex items-center justify-center p-6">
+        <div className="max-w-md w-full p-12 bg-white rounded-[3rem] shadow-2xl text-center">
+          <h2 className="text-3xl font-serif font-bold text-brand-green mb-8">Admin Access</h2>
+          <button 
+            onClick={handleLogin}
+            className="w-full py-4 bg-brand-green text-brand-cream rounded-2xl font-bold hover:bg-brand-brown transition-all flex items-center justify-center gap-3"
+          >
+            Login with Google
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-brand-cream p-8 md:p-12">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-12">
+          <div>
+            <h1 className="text-4xl font-serif font-bold text-brand-green">Audit Requests</h1>
+            <p className="text-brand-green/60 mt-2">Manage your restaurant growth leads</p>
+          </div>
+          <button onClick={handleLogout} className="text-brand-green/60 font-bold hover:text-brand-green">Logout</button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+          <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-brand-green/5">
+            <div className="flex items-center gap-4 mb-2">
+              <div className="p-3 bg-brand-green/5 rounded-xl text-brand-green">
+                <Users size={20} />
+              </div>
+              <p className="text-sm font-bold text-brand-green/60 uppercase tracking-widest">Total Leads</p>
+            </div>
+            <p className="text-4xl font-serif font-bold text-brand-green">{stats.total}</p>
+          </div>
+          <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-brand-green/5">
+            <div className="flex items-center gap-4 mb-2">
+              <div className="p-3 bg-yellow-50 rounded-xl text-yellow-600">
+                <Clock size={20} />
+              </div>
+              <p className="text-sm font-bold text-brand-green/60 uppercase tracking-widest">Pending</p>
+            </div>
+            <p className="text-4xl font-serif font-bold text-brand-green">{stats.pending}</p>
+          </div>
+          <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-brand-green/5">
+            <div className="flex items-center gap-4 mb-2">
+              <div className="p-3 bg-green-50 rounded-xl text-green-600">
+                <CheckCircle2 size={20} />
+              </div>
+              <p className="text-sm font-bold text-brand-green/60 uppercase tracking-widest">Completed</p>
+            </div>
+            <p className="text-4xl font-serif font-bold text-brand-green">{stats.completed}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-6">
+          {requests.map((req) => (
+            <div key={req.id} className="bg-white p-8 rounded-[2rem] shadow-sm border border-brand-green/5 group">
+              <div className="flex flex-col md:flex-row justify-between items-start gap-6">
+                <div className="flex-1">
+                  <div className="flex items-center gap-4 mb-2">
+                    <h3 className="text-2xl font-serif font-bold text-brand-green">{req.restaurantName}</h3>
+                    <span className={`px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                      req.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 
+                      req.status === 'contacted' ? 'bg-blue-100 text-blue-700' : 
+                      'bg-green-100 text-green-700'
+                    }`}>
+                      {req.status}
+                    </span>
+                  </div>
+                  <p className="text-brand-green/60 font-medium mb-4">{req.name} • <a href={`tel:${req.phone}`} className="hover:text-brand-accent">{req.phone}</a></p>
+                  <div className="bg-brand-cream/50 p-6 rounded-2xl mb-4 italic text-brand-green/80">
+                    "{req.message || 'No message provided'}"
+                  </div>
+                  <p className="text-xs text-brand-green/40 flex items-center gap-2">
+                    <Clock size={12} />
+                    {req.createdAt?.toDate().toLocaleString()}
+                  </p>
+                </div>
+                
+                <div className="flex md:flex-col gap-3">
+                  <select 
+                    value={req.status}
+                    onChange={(e) => updateStatus(req.id, e.target.value)}
+                    className="px-4 py-2 bg-brand-cream rounded-xl border-none text-sm font-bold text-brand-green focus:ring-2 focus:ring-brand-accent transition-all"
+                  >
+                    <option value="pending">Pending</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                  <button 
+                    onClick={() => deleteRequest(req.id)}
+                    className="p-3 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                    title="Delete Lead"
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {requests.length === 0 && (
+            <div className="bg-white p-20 rounded-[3rem] text-center border border-dashed border-brand-green/10">
+              <div className="w-20 h-20 bg-brand-cream rounded-full flex items-center justify-center mx-auto mb-6 text-brand-green/20">
+                <RefreshCw size={40} />
+              </div>
+              <p className="text-xl font-serif font-bold text-brand-green/40">No audit requests found yet.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
+  const [isAdminView, setIsAdminView] = useState(false);
+
+  useEffect(() => {
+    if (window.location.hash === '#admin') {
+      setIsAdminView(true);
+    }
+    const handleHashChange = () => {
+      setIsAdminView(window.location.hash === '#admin');
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  if (isAdminView) {
+    return (
+      <AdminDashboard />
+    );
+  }
+
   return (
     <div className="relative">
       <Navbar />
@@ -808,6 +1233,7 @@ export default function App() {
       </main>
       <Footer />
       <FloatingWhatsApp />
+      <ChatBot />
     </div>
   );
 }

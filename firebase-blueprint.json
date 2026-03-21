@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "AuditRequest": {
+      "title": "Audit Request",
+      "description": "A request for a restaurant marketing audit.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the person requesting the audit."
+        },
+        "restaurantName": {
+          "type": "string",
+          "description": "The name of the restaurant."
+        },
+        "phone": {
+          "type": "string",
+          "description": "The phone number of the requester."
+        },
+        "message": {
+          "type": "string",
+          "description": "The message or specific request."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The time the request was submitted."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "contacted", "completed"],
+          "description": "The status of the request."
+        }
+      },
+      "required": ["name", "restaurantName", "phone", "createdAt", "status"]
+    }
+  },
+  "firestore": {
+    "/auditRequests/{requestId}": {
+      "schema": "AuditRequest",
+      "description": "Collection of audit requests from potential clients."
+    }
+  }
+}
