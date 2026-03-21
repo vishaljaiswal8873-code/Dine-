@@ -563,21 +563,21 @@ const SampleResults = () => {
       desc: "We transform your Instagram into a visual menu that Ranchi foodies can't stop scrolling.",
       outcome: "3.2x higher engagement & viral reach.",
       icon: <Instagram className="w-10 h-10" />,
-      img: "https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?auto=format&fit=crop&q=80&w=800"
+      img: "https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?auto=format&fit=crop&q=80&w=1200"
     },
     {
       title: "Maps Dominance",
       desc: "Be the first choice when someone searches for 'best food near me' in Ranchi.",
       outcome: "#1 Ranking in Local Pack searches.",
       icon: <MapPin className="w-10 h-10" />,
-      img: "https://images.unsplash.com/photo-1569336415962-a4bd4f79c3f2?auto=format&fit=crop&q=80&w=800"
+      img: "https://images.unsplash.com/photo-1526628953301-3e589a6a8b74?auto=format&fit=crop&q=80&w=1200"
     },
     {
       title: "Digital Storefront",
       desc: "A high-end website that converts casual visitors into loyal dine-in customers.",
       outcome: "45% increase in direct bookings.",
       icon: <Globe className="w-10 h-10" />,
-      img: "https://images.unsplash.com/photo-1551288049-bbbda536339a?auto=format&fit=crop&q=80&w=800"
+      img: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&q=80&w=1200"
     }
   ];
 
@@ -611,7 +611,7 @@ const SampleResults = () => {
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-[2000ms]"
                   referrerPolicy="no-referrer"
                 />
-                <div className="absolute inset-0 bg-brand-green/20 group-hover:bg-transparent transition-colors duration-700" />
+                <div className="absolute inset-0 bg-brand-green/5 group-hover:bg-transparent transition-colors duration-700" />
                 <div className="absolute top-8 left-8 w-16 h-16 glass rounded-2xl flex items-center justify-center text-brand-accent shadow-2xl border-white/40">
                   {r.icon}
                 </div>
@@ -649,7 +649,11 @@ const SampleResults = () => {
               "https://images.unsplash.com/photo-1550966842-2849a28c0a61?auto=format&fit=crop&q=80&w=600",
               "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&q=80&w=600",
               "https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?auto=format&fit=crop&q=80&w=600",
-              "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&q=80&w=600"
+              "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&q=80&w=600",
+              "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=600",
+              "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?auto=format&fit=crop&q=80&w=600",
+              "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=600",
+              "https://images.unsplash.com/photo-1567620905732-2d1ec7bb7445?auto=format&fit=crop&q=80&w=600"
             ].map((img, i) => (
               <motion.div
                 key={i}
